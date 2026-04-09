@@ -1,194 +1,224 @@
-const API_BASE = 'http://localhost:8000/api/v1';
-const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
-const CHECK_INTERVAL_MINUTES = 60;
 
-// In-memory cache: url -> { result, timestamp }
+const API_BASE = 'http://127.0.0.1:8000/api/v1';
+const CACHE_TTL_MS = 5 * 60 * 1000;
+const CACHE_CLEANUP_MINUTES = 60;
+
 const resultCache = new Map();
 
-// -------------------------------------------------------------------------
-// Navigation interception
-// -------------------------------------------------------------------------
-
-chrome.webNavigation.onCompleted.addListener(async (details) => {
-  // Only check top-level frame navigations
-  if (details.frameId !== 0) return;
-
-  const url = details.url;
-  if (!shouldCheck(url)) return;
-
-  try {
-    const result = await checkUrlWithCache(url);
-    updateBadge(details.tabId, result);
-
-    // Notify content script about the result
-    chrome.tabs.sendMessage(details.tabId, {
-      type: 'PAGE_VERDICT',
-      url,
-      data: result,
-    }).catch(() => {
-      // Content script may not be ready yet — ignore
-    });
-  } catch (err) {
-    console.warn('[PhishNet] Background check failed:', err.message);
-  }
+chrome.runtime.onInstalled.addListener(() => {
+chrome.action.setBadgeText({ text: '' });
+chrome.alarms.create('phishnet-cache-cleanup', {
+periodInMinutes: CACHE_CLEANUP_MINUTES,
+});
 });
 
-// -------------------------------------------------------------------------
-// Message handling from popup / content scripts
-// -------------------------------------------------------------------------
+chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
+// 🔒 Safety check
+if (!tabId || tabId < 0 || !tab) return;
+
+const url = changeInfo.url || (changeInfo.status === 'complete' ? tab.url : null);
+
+if (!url || !shouldCheck(url)) {
+clearBadge(tabId);
+return;
+}
+
+try {
+const result = await checkUrlWithCache(url);
+updateBadge(tabId, result);
+
+```
+// 🔥 SAFE MESSAGE SENDING (FIXED)
+if (result.verdict === 'phishing') {
+  try {
+    const tabInfo = await chrome.tabs.get(tabId);
+
+    if (!tabInfo || !tabInfo.id) return;
+
+    chrome.tabs.sendMessage(tabId, {
+      type: 'PAGE_VERDICT',
+      data: result,
+    }).catch(() => {});
+  } catch (err) {
+    console.warn("[PhishNet] Tab no longer exists:", tabId);
+  }
+}
+```
+
+} catch (error) {
+console.error('[PhishNet] Failed to check URL:', error);
+clearBadge(tabId);
+}
+});
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message.type === 'CHECK_URL') {
-    checkUrlWithCache(message.url)
-      .then((result) => sendResponse({ success: true, data: result }))
-      .catch((err) => sendResponse({ success: false, error: err.message }));
-    return true; // async response
-  }
-
-  if (message.type === 'SCAN_RESULT') {
-    // Popup forwarded a scan result — cache it and update badge
-    if (message.url && message.data) {
-      cacheResult(message.url, message.data);
-      if (sender.tab) {
-        updateBadge(sender.tab.id, message.data);
-      }
-    }
-  }
-
-  if (message.type === 'GET_CACHED') {
-    const cached = getCachedResult(message.url);
-    sendResponse({ data: cached });
-    return false;
-  }
-});
-
-// -------------------------------------------------------------------------
-// API interaction
-// -------------------------------------------------------------------------
-
-async function checkUrlWithCache(url) {
-  // Check cache first
-  const cached = getCachedResult(url);
-  if (cached) return cached;
-
-  // Call PhishNet API
-  const stored = await chrome.storage.local.get(['phishnet_api_key']);
-  const apiKey = stored.phishnet_api_key || '';
-
-  const headers = { 'Content-Type': 'application/json' };
-  if (apiKey) headers['X-API-Key'] = apiKey;
-
-  const response = await fetch(`${API_BASE}/extension/check`, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({ url, check_cache: true }),
-  });
-
-  if (!response.ok) {
-    throw new Error(`API returned ${response.status}`);
-  }
-
-  const result = await response.json();
-  cacheResult(url, result);
-  return result;
+if (message.type === 'CHECK_URL') {
+checkUrlWithCache(message.url)
+.then((result) => sendResponse({ success: true, data: result }))
+.catch((error) => sendResponse({ success: false, error: error.message }));
+return true;
 }
 
-// -------------------------------------------------------------------------
-// Cache management
-// -------------------------------------------------------------------------
-
-function cacheResult(url, result) {
-  resultCache.set(url, { result, timestamp: Date.now() });
-
-  // Prune old entries to avoid memory bloat
-  if (resultCache.size > 500) {
-    const oldest = [...resultCache.entries()]
-      .sort((a, b) => a[1].timestamp - b[1].timestamp)
-      .slice(0, 100);
-    for (const [key] of oldest) {
-      resultCache.delete(key);
-    }
-  }
+if (message.type === 'SCAN_RESULT') {
+if (message.url && message.data) {
+cacheResult(message.url, normalizeResult(message.url, message.data));
+if (sender.tab?.id != null) {
+updateBadge(sender.tab.id, message.data);
+}
+}
+return false;
 }
 
-function getCachedResult(url) {
-  const entry = resultCache.get(url);
-  if (!entry) return null;
-  if (Date.now() - entry.timestamp > CACHE_TTL_MS) {
-    resultCache.delete(url);
-    return null;
-  }
-  return entry.result;
+if (message.type === 'GET_CACHED') {
+sendResponse({ data: getCachedResult(message.url) });
+return false;
 }
 
-// -------------------------------------------------------------------------
-// Badge management
-// -------------------------------------------------------------------------
-
-function updateBadge(tabId, result) {
-  if (!result || !result.verdict) return;
-
-  const verdict = result.verdict;
-  let text = '';
-  let color = '#6b7280'; // gray
-
-  if (verdict === 'phishing') {
-    text = '!';
-    color = '#ef4444'; // red
-  } else if (verdict === 'suspicious') {
-    text = '?';
-    color = '#f59e0b'; // amber
-  } else if (verdict === 'safe') {
-    text = '';
-    color = '#22c55e'; // green
-  }
-
-  chrome.action.setBadgeText({ text, tabId });
-  chrome.action.setBadgeBackgroundColor({ color, tabId });
-}
-
-// -------------------------------------------------------------------------
-// URL filtering
-// -------------------------------------------------------------------------
-
-function shouldCheck(url) {
-  if (!url) return false;
-
-  // Skip browser internal pages
-  const skipPrefixes = [
-    'chrome://', 'chrome-extension://', 'about:', 'edge://',
-    'moz-extension://', 'file://', 'data:', 'blob:',
-    'devtools://', 'view-source:',
-  ];
-
-  for (const prefix of skipPrefixes) {
-    if (url.startsWith(prefix)) return false;
-  }
-
-  // Skip localhost development servers (but allow localhost:8000 API)
-  if (url.includes('localhost') && !url.includes('localhost:8000')) {
-    return false;
-  }
-
-  return true;
-}
-
-// -------------------------------------------------------------------------
-// Periodic cache cleanup
-// -------------------------------------------------------------------------
-
-chrome.alarms.create('phishnet-cache-cleanup', {
-  periodInMinutes: CHECK_INTERVAL_MINUTES,
+return false;
 });
 
 chrome.alarms.onAlarm.addListener((alarm) => {
-  if (alarm.name === 'phishnet-cache-cleanup') {
-    const now = Date.now();
-    for (const [url, entry] of resultCache.entries()) {
-      if (now - entry.timestamp > CACHE_TTL_MS) {
-        resultCache.delete(url);
-      }
-    }
-    console.log(`[PhishNet] Cache cleanup: ${resultCache.size} entries remaining`);
-  }
+if (alarm.name !== 'phishnet-cache-cleanup') return;
+
+const now = Date.now();
+for (const [url, entry] of resultCache.entries()) {
+if (now - entry.timestamp > CACHE_TTL_MS) {
+resultCache.delete(url);
+}
+}
 });
+
+async function checkUrlWithCache(url) {
+const cached = getCachedResult(url);
+if (cached) return cached;
+
+const stored = await chrome.storage.local.get(['phishnet_api_key']);
+const apiKey = stored.phishnet_api_key || '';
+
+const headers = { 'Content-Type': 'application/json' };
+if (apiKey) headers['X-API-Key'] = apiKey;
+
+const response = await fetch(`${API_BASE}/extension/check`, {
+method: 'POST',
+headers,
+body: JSON.stringify({ url, check_cache: true }),
+});
+
+if (!response.ok) {
+let message = `API returned ${response.status}`;
+try {
+const errorData = await response.json();
+if (typeof errorData?.detail === 'string') message = errorData.detail;
+else if (typeof errorData?.message === 'string') message = errorData.message;
+} catch {}
+
+```
+throw new Error(message);
+```
+
+}
+
+const payload = await response.json();
+const result = normalizeResult(url, payload);
+cacheResult(url, result);
+return result;
+}
+
+function normalizeResult(url, payload) {
+const verdict = payload?.verdict || 'unknown';
+const confidence =
+typeof payload?.confidence === 'number'
+? payload.confidence
+: inferConfidenceFromVerdict(verdict);
+const riskLevel = payload?.risk_level || inferRiskLevel(verdict, confidence);
+
+return {
+url: payload?.url || url,
+verdict,
+confidence,
+risk_level: riskLevel,
+cached: Boolean(payload?.cached),
+details: payload?.details || null,
+};
+}
+
+function cacheResult(url, result) {
+resultCache.set(url, { result, timestamp: Date.now() });
+
+if (resultCache.size <= 500) return;
+
+const oldestEntries = [...resultCache.entries()]
+.sort((a, b) => a[1].timestamp - b[1].timestamp)
+.slice(0, 100);
+
+for (const [key] of oldestEntries) {
+resultCache.delete(key);
+}
+}
+
+function getCachedResult(url) {
+const entry = resultCache.get(url);
+if (!entry) return null;
+
+if (Date.now() - entry.timestamp > CACHE_TTL_MS) {
+resultCache.delete(url);
+return null;
+}
+
+return entry.result;
+}
+
+function updateBadge(tabId, result) {
+if (tabId == null || !result?.verdict) return;
+
+if (result.verdict === 'phishing') {
+chrome.action.setBadgeText({ text: '!', tabId });
+chrome.action.setBadgeBackgroundColor({ color: '#dc2626', tabId });
+return;
+}
+
+if (result.verdict === 'suspicious') {
+chrome.action.setBadgeText({ text: '?', tabId });
+chrome.action.setBadgeBackgroundColor({ color: '#f59e0b', tabId });
+return;
+}
+
+clearBadge(tabId);
+}
+
+function clearBadge(tabId) {
+chrome.action.setBadgeText({ text: '', tabId });
+}
+
+function shouldCheck(url) {
+if (!url) return false;
+
+const skipPrefixes = [
+'chrome://',
+'chrome-extension://',
+'edge://',
+'about:',
+'moz-extension://',
+'file://',
+'data:',
+'blob:',
+'devtools://',
+'view-source:',
+];
+
+return !skipPrefixes.some((prefix) => url.startsWith(prefix));
+}
+
+function inferConfidenceFromVerdict(verdict) {
+if (verdict === 'phishing') return 0.9;
+if (verdict === 'suspicious') return 0.65;
+if (verdict === 'safe') return 0.15;
+return 0;
+}
+
+function inferRiskLevel(verdict, confidence) {
+if (verdict === 'phishing') return confidence >= 0.9 ? 'high' : 'medium';
+if (verdict === 'suspicious') return 'medium';
+if (verdict === 'safe') return 'low';
+return 'unknown';
+}

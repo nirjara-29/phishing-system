@@ -5,24 +5,20 @@
   "description": "Real-time phishing detection powered by AI. Checks URLs before you visit them and highlights suspicious links on any page.",
   "permissions": [
     "activeTab",
+    "tabs",
     "storage",
-    "webNavigation",
     "alarms"
   ],
   "host_permissions": [
     "http://localhost:8000/*",
+    "http://127.0.0.1:8000/*",
     "https://api.phishnet.io/*"
   ],
   "action": {
-    "default_popup": "popup.html",
-    "default_icon": {
-      "16": "icons/icon16.png",
-      "48": "icons/icon48.png",
-      "128": "icons/icon128.png"
-    }
+    "default_popup": "popup.html"
   },
   "background": {
-    "service_worker": "background.js",
+    "service_worker": "background-worker.js",
     "type": "module"
   },
   "content_scripts": [
@@ -33,10 +29,5 @@
       "run_at": "document_idle"
     }
   ],
-  "icons": {
-    "16": "icons/icon16.png",
-    "48": "icons/icon48.png",
-    "128": "icons/icon128.png"
-  },
   "options_page": "popup.html"
 }

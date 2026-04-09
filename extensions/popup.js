@@ -1,8 +1,6 @@
 
-const API_BASE = 'http://localhost:8000/api/v1';
 const MAX_HISTORY = 15;
 
-// DOM elements
 const currentUrlEl = document.getElementById('currentUrl');
 const checkBtn = document.getElementById('checkBtn');
 const resultSection = document.getElementById('resultSection');
@@ -17,26 +15,20 @@ const historyList = document.getElementById('historyList');
 const apiKeyInput = document.getElementById('apiKeyInput');
 const saveSettingsBtn = document.getElementById('saveSettings');
 
-// State
 let currentTabUrl = '';
 
-// -------------------------------------------------------------------------
-// Initialisation
-// -------------------------------------------------------------------------
-
 document.addEventListener('DOMContentLoaded', async () => {
-  // Load saved API key
   const stored = await chrome.storage.local.get(['phishnet_api_key']);
   if (stored.phishnet_api_key) {
     apiKeyInput.value = stored.phishnet_api_key;
   }
 
-  // Get current tab URL
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  if (tab && tab.url) {
+  if (tab?.url) {
     currentTabUrl = tab.url;
     currentUrlEl.textContent = truncate(currentTabUrl, 60);
     currentUrlEl.title = currentTabUrl;
+    checkBtn.disabled = isUnsupportedUrl(currentTabUrl);
   } else {
     currentUrlEl.textContent = 'Unable to read tab URL';
     checkBtn.disabled = true;
@@ -45,60 +37,54 @@ document.addEventListener('DOMContentLoaded', async () => {
   loadHistory();
 });
 
-// -------------------------------------------------------------------------
-// Event handlers
-// -------------------------------------------------------------------------
-
 checkBtn.addEventListener('click', () => checkUrl(currentTabUrl));
 
 saveSettingsBtn.addEventListener('click', async () => {
   const key = apiKeyInput.value.trim();
   await chrome.storage.local.set({ phishnet_api_key: key });
   saveSettingsBtn.textContent = 'Saved!';
-  setTimeout(() => { saveSettingsBtn.textContent = 'Save'; }, 1500);
+  setTimeout(() => {
+    saveSettingsBtn.textContent = 'Save';
+  }, 1500);
 });
 
-// -------------------------------------------------------------------------
-// API call
-// -------------------------------------------------------------------------
-
 async function checkUrl(url) {
-  if (!url || url.startsWith('chrome://') || url.startsWith('chrome-extension://')) {
-    showError('Cannot scan browser internal pages.');
+  if (!url || isUnsupportedUrl(url)) {
+    showError('Cannot scan this page type. Open a regular website tab.');
     return;
   }
 
   showLoading();
 
   try {
-    const stored = await chrome.storage.local.get(['phishnet_api_key']);
-    const apiKey = stored.phishnet_api_key || '';
+    const rawData = await new Promise((resolve, reject) => {
+      chrome.runtime.sendMessage({
+        type: 'CHECK_URL',
+        url,
+      }, (response) => {
+        console.log('Popup received:', response);
 
-    const headers = { 'Content-Type': 'application/json' };
-    if (apiKey) headers['X-API-Key'] = apiKey;
+        if (chrome.runtime.lastError) {
+          reject(new Error(chrome.runtime.lastError.message));
+          return;
+        }
 
-    const response = await fetch(`${API_BASE}/extension/check`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({ url, check_cache: true }),
+        if (!response) {
+          showError('No response from background');
+          reject(new Error('No response from background'));
+          return;
+        }
+
+        resolve(response);
+      });
     });
-
-    if (!response.ok) {
-      const errData = await response.json().catch(() => ({}));
-      throw new Error(errData.message || `HTTP ${response.status}`);
-    }
-
-    const data = await response.json();
+    const data = normalizeResult(url, rawData);
     showResult(data);
     saveToHistory(url, data);
-  } catch (err) {
-    showError(err.message || 'Failed to connect to PhishNet API');
+  } catch (error) {
+    showError(error.message || 'Failed to connect to PhishNet API');
   }
 }
-
-// -------------------------------------------------------------------------
-// UI helpers
-// -------------------------------------------------------------------------
 
 function showLoading() {
   resultSection.classList.add('hidden');
@@ -114,35 +100,32 @@ function showResult(data) {
   checkBtn.disabled = false;
 
   const verdict = data.verdict || 'unknown';
-  const confidence = data.confidence != null ? Math.round(data.confidence * 100) : '--';
+  const confidence = data.confidence != null ? Math.round(data.confidence * 100) : null;
   const risk = data.risk_level || 'unknown';
 
   resultVerdict.textContent = verdict === 'safe'
     ? 'This page appears safe'
     : verdict === 'phishing'
-    ? 'WARNING: Likely phishing!'
-    : 'Suspicious — proceed with caution';
+    ? 'Warning: likely phishing'
+    : verdict === 'suspicious'
+    ? 'Suspicious page: proceed with caution'
+    : 'Unable to classify this page';
 
-  resultVerdict.className = 'result-verdict verdict-' + verdict;
-  resultConfidence.textContent = confidence + '%';
+  resultVerdict.className = `result-verdict verdict-${verdict}`;
+  resultConfidence.textContent = confidence == null ? '--' : `${confidence}%`;
   resultRisk.textContent = risk;
   resultLabel.textContent = verdict;
 
-  // Notify background script
   chrome.runtime.sendMessage({ type: 'SCAN_RESULT', url: currentTabUrl, data });
 }
 
-function showError(msg) {
+function showError(message) {
   loadingSection.classList.add('hidden');
   resultSection.classList.add('hidden');
   errorSection.classList.remove('hidden');
-  errorMessage.textContent = msg;
+  errorMessage.textContent = message;
   checkBtn.disabled = false;
 }
-
-// -------------------------------------------------------------------------
-// History management
-// -------------------------------------------------------------------------
 
 async function saveToHistory(url, result) {
   const stored = await chrome.storage.local.get(['phishnet_history']);
@@ -155,8 +138,9 @@ async function saveToHistory(url, result) {
     timestamp: Date.now(),
   });
 
-  // Cap history size
-  if (history.length > MAX_HISTORY) history.length = MAX_HISTORY;
+  if (history.length > MAX_HISTORY) {
+    history.length = MAX_HISTORY;
+  }
 
   await chrome.storage.local.set({ phishnet_history: history });
   renderHistory(history);
@@ -164,8 +148,7 @@ async function saveToHistory(url, result) {
 
 async function loadHistory() {
   const stored = await chrome.storage.local.get(['phishnet_history']);
-  const history = stored.phishnet_history || [];
-  renderHistory(history);
+  renderHistory(stored.phishnet_history || []);
 }
 
 function renderHistory(history) {
@@ -178,20 +161,81 @@ function renderHistory(history) {
     .map(
       (entry) => `
       <li class="history-item">
-        <span class="history-dot dot-${entry.verdict}"></span>
+        <span class="history-dot dot-${entry.verdict || 'unknown'}"></span>
         <span class="history-url" title="${entry.url}">${entry.url}</span>
-        <span class="history-verdict">${entry.verdict}</span>
+        <span class="history-verdict">${entry.verdict || 'unknown'}</span>
       </li>
     `
     )
     .join('');
 }
 
-// -------------------------------------------------------------------------
-// Utility
-// -------------------------------------------------------------------------
+function normalizeResult(url, payload) {
+  const verdict = payload?.verdict || 'unknown';
+  const confidence = typeof payload?.confidence === 'number'
+    ? payload.confidence
+    : inferConfidenceFromVerdict(verdict);
+  const riskLevel = payload?.risk_level || inferRiskLevel(verdict, confidence);
 
-function truncate(str, len) {
-  if (!str) return '';
-  return str.length > len ? str.slice(0, len) + '...' : str;
+  return {
+    url: payload?.url || url,
+    verdict,
+    confidence,
+    risk_level: riskLevel,
+  };
+}
+
+function inferConfidenceFromVerdict(verdict) {
+  if (verdict === 'phishing') {
+    return 0.9;
+  }
+
+  if (verdict === 'suspicious') {
+    return 0.65;
+  }
+
+  if (verdict === 'safe') {
+    return 0.15;
+  }
+
+  return null;
+}
+
+function inferRiskLevel(verdict, confidence) {
+  if (verdict === 'phishing') {
+    return confidence >= 0.9 ? 'critical' : 'high';
+  }
+
+  if (verdict === 'suspicious') {
+    return 'medium';
+  }
+
+  if (verdict === 'safe') {
+    return 'low';
+  }
+
+  return 'unknown';
+}
+
+function isUnsupportedUrl(url) {
+  return [
+    'chrome://',
+    'chrome-extension://',
+    'edge://',
+    'about:',
+    'moz-extension://',
+    'file://',
+    'data:',
+    'blob:',
+    'devtools://',
+    'view-source:',
+  ].some((prefix) => url.startsWith(prefix));
+}
+
+function truncate(value, length) {
+  if (!value) {
+    return '';
+  }
+
+  return value.length > length ? `${value.slice(0, length)}...` : value;
 }

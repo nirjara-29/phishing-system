@@ -1,8 +1,9 @@
 (function () {
   'use strict';
 
-  // Avoid running in iframes
-  if (window !== window.top) return;
+  if (window !== window.top) {
+    return;
+  }
 
   const SUSPICIOUS_TLDS = ['.tk', '.ml', '.ga', '.cf', '.gq', '.xyz', '.top', '.club', '.buzz'];
   const BRAND_KEYWORDS = [
@@ -15,27 +16,28 @@
   ];
 
   let warningOverlay = null;
-  let scannedLinks = new WeakSet();
-
-  // -----------------------------------------------------------------------
-  // Link scanning
-  // -----------------------------------------------------------------------
+  const scannedLinks = new WeakSet();
 
   function scanPageLinks() {
     const links = document.querySelectorAll('a[href]');
     let suspiciousCount = 0;
 
     links.forEach((link) => {
-      if (scannedLinks.has(link)) return;
+      if (scannedLinks.has(link)) {
+        return;
+      }
+
       scannedLinks.add(link);
 
       const href = link.href;
-      if (!href || href.startsWith('javascript:') || href.startsWith('#')) return;
+      if (!href || href.startsWith('javascript:') || href.startsWith('#')) {
+        return;
+      }
 
-      const score = computeLinkSuspicion(href, link.textContent);
+      const score = computeLinkSuspicion(href, link.textContent || '');
       if (score >= 3) {
         markSuspicious(link, score);
-        suspiciousCount++;
+        suspiciousCount += 1;
       }
     });
 
@@ -50,19 +52,16 @@
     try {
       const url = new URL(href);
       const hostname = url.hostname.toLowerCase();
-      const fullPath = (url.pathname + url.search).toLowerCase();
+      const fullPath = `${url.pathname}${url.search}`.toLowerCase();
 
-      // Check suspicious TLDs
-      for (const tld of SUSPICIOUS_TLDS) {
-        if (hostname.endsWith(tld)) { score += 2; break; }
+      if (SUSPICIOUS_TLDS.some((tld) => hostname.endsWith(tld))) {
+        score += 2;
       }
 
-      // Check for IP address in hostname
-      if (/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(hostname)) {
+      if (/^\d{1,3}(\.\d{1,3}){3}$/.test(hostname)) {
         score += 3;
       }
 
-      // Check for brand keyword in domain that is not the real brand domain
       for (const brand of BRAND_KEYWORDS) {
         if (hostname.includes(brand) && !hostname.endsWith(`${brand}.com`)) {
           score += 2;
@@ -70,52 +69,40 @@
         }
       }
 
-      // Check for suspicious path keywords
-      for (const kw of SUSPICIOUS_KEYWORDS) {
-        if (fullPath.includes(kw)) { score += 1; break; }
+      if (SUSPICIOUS_KEYWORDS.some((keyword) => fullPath.includes(keyword))) {
+        score += 1;
       }
 
-      // Check for mismatch between visible text and actual URL
-      if (visibleText) {
-        const textLower = visibleText.trim().toLowerCase();
-        // Visible text looks like a URL but points elsewhere
-        if (textLower.startsWith('http') || textLower.includes('.com')) {
-          try {
-            const visibleUrl = new URL(
-              textLower.startsWith('http') ? textLower : `https://${textLower}`
-            );
-            if (visibleUrl.hostname !== hostname) {
-              score += 3; // URL mismatch is very suspicious
-            }
-          } catch {
-            // not a valid URL in text — ignore
+      const textLower = visibleText.trim().toLowerCase();
+      if (textLower && (textLower.startsWith('http') || textLower.includes('.com'))) {
+        try {
+          const visibleUrl = new URL(textLower.startsWith('http') ? textLower : `https://${textLower}`);
+          if (visibleUrl.hostname !== hostname) {
+            score += 3;
           }
+        } catch {
+          // Ignore visible text that is not actually a URL.
         }
       }
 
-      // Very long hostname
-      if (hostname.length > 40) score += 1;
+      if (hostname.length > 40) {
+        score += 1;
+      }
 
-      // Too many subdomains
-      const subdomains = hostname.split('.').length - 2;
-      if (subdomains >= 3) score += 1;
-
+      if (hostname.split('.').length - 2 >= 3) {
+        score += 1;
+      }
     } catch {
-      // Invalid URL — skip
+      // Ignore invalid URLs.
     }
 
     return score;
   }
 
-  // -----------------------------------------------------------------------
-  // Visual marking
-  // -----------------------------------------------------------------------
-
   function markSuspicious(link, score) {
     link.classList.add('phishnet-suspicious');
-    link.dataset.phishnetScore = score;
+    link.dataset.phishnetScore = String(score);
 
-    // Add warning icon before the link text
     if (!link.querySelector('.phishnet-warn-icon')) {
       const icon = document.createElement('span');
       icon.className = 'phishnet-warn-icon';
@@ -124,13 +111,12 @@
       link.prepend(icon);
     }
 
-    // Add hover tooltip
     link.addEventListener('mouseenter', showWarningTooltip);
     link.addEventListener('mouseleave', hideWarningTooltip);
   }
 
-  function showWarningTooltip(e) {
-    const link = e.currentTarget;
+  function showWarningTooltip(event) {
+    const link = event.currentTarget;
     const score = link.dataset.phishnetScore || '?';
 
     if (!warningOverlay) {
@@ -157,64 +143,74 @@
     }
   }
 
-  // -----------------------------------------------------------------------
-  // Message handling from background script
-  // -----------------------------------------------------------------------
-
   chrome.runtime.onMessage.addListener((message) => {
-    if (message.type === 'PAGE_VERDICT' && message.data) {
-      const verdict = message.data.verdict;
-      if (verdict === 'phishing') {
-        showPageWarningBanner(message.data);
-      }
+    if (message.type === 'PAGE_VERDICT' && message.data?.verdict === 'phishing') {
+      showPageWarningBanner(message.data);
     }
   });
 
   function showPageWarningBanner(data) {
-    // Avoid duplicate banners
-    if (document.getElementById('phishnet-page-warning')) return;
+    if (document.getElementById('phishnet-page-warning')) {
+      return;
+    }
 
     const banner = document.createElement('div');
     banner.id = 'phishnet-page-warning';
     banner.className = 'phishnet-warning-banner';
+    const confidence = Math.round((data.confidence || 0) * 100);
+
     banner.innerHTML = `
       <div class="phishnet-banner-content">
         <span class="phishnet-banner-icon">\u26A0</span>
         <div>
           <strong>PhishNet Warning:</strong> This page has been identified as a phishing site
-          (confidence: ${Math.round((data.confidence || 0) * 100)}%).
+          (confidence: ${confidence}%).
           <br><small>Proceed with extreme caution. Do not enter any personal information.</small>
         </div>
         <button id="phishnet-dismiss-banner" class="phishnet-banner-dismiss">\u2715</button>
       </div>
     `;
-    document.body.prepend(banner);
 
+    document.body.prepend(banner);
     document.getElementById('phishnet-dismiss-banner')?.addEventListener('click', () => {
       banner.remove();
     });
   }
 
-  // -----------------------------------------------------------------------
-  // Run on page load and observe DOM changes
-  // -----------------------------------------------------------------------
+  function start() {
+    scanPageLinks();
 
-  scanPageLinks();
+    if (!document.body) {
+      return;
+    }
 
-  // Re-scan when new links are added dynamically (SPA navigations, AJAX)
-  const observer = new MutationObserver((mutations) => {
-    let hasNewLinks = false;
-    for (const mutation of mutations) {
-      for (const node of mutation.addedNodes) {
-        if (node.nodeType === 1 && (node.tagName === 'A' || node.querySelector?.('a'))) {
-          hasNewLinks = true;
+    const observer = new MutationObserver((mutations) => {
+      let hasNewLinks = false;
+
+      for (const mutation of mutations) {
+        for (const node of mutation.addedNodes) {
+          if (node.nodeType === Node.ELEMENT_NODE && (node.tagName === 'A' || node.querySelector?.('a'))) {
+            hasNewLinks = true;
+            break;
+          }
+        }
+
+        if (hasNewLinks) {
           break;
         }
       }
-      if (hasNewLinks) break;
-    }
-    if (hasNewLinks) scanPageLinks();
-  });
 
-  observer.observe(document.body, { childList: true, subtree: true });
+      if (hasNewLinks) {
+        scanPageLinks();
+      }
+    });
+
+    observer.observe(document.body, { childList: true, subtree: true });
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', start, { once: true });
+  } else {
+    start();
+  }
 })();

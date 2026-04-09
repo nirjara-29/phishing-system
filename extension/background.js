@@ -1,3 +1,10 @@
+/**
+
+* PhishNet browser extension background service worker.
+*
+* Checks navigated URLs against the backend, caches recent results, updates the
+* action badge, and notifies the content script when a page looks dangerous.
+  */
 
 const API_BASE = 'http://127.0.0.1:8000/api/v1';
 const CACHE_TTL_MS = 5 * 60 * 1000;

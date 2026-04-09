@@ -1,3 +1,9 @@
+/**
+ * PhishNet Browser Extension popup logic.
+ *
+ * Shows the active URL, sends it to the backend, renders the verdict, and
+ * stores a small local scan history.
+ */
 
 const MAX_HISTORY = 15;
 

@@ -1,3 +1,10 @@
+/**
+ * PhishNet browser extension background service worker.
+ *
+ * Checks navigated URLs early, applies a fast URL-based phishing pre-check,
+ * falls back to the backend for ML-backed analysis, updates the action badge,
+ * and notifies the content script when a page looks dangerous.
+ */
 
 const API_BASE = 'http://127.0.0.1:8000/api/v1';
 const CACHE_TTL_MS = 5 * 60 * 1000;
@@ -64,6 +71,35 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           confidence: 0,
           risk_level: 'unknown',
         });
+      }
+    })();
+    return true;
+  }
+
+  if (message.type === 'SCAN_EMAIL') {
+    (async () => {
+      try {
+        const result = await scanEmailContent(message.email);
+
+        if (sender.tab?.id != null) {
+          updateEmailBadge(sender.tab.id, result);
+          chrome.tabs.sendMessage(sender.tab.id, {
+            type: 'EMAIL_RESULT',
+            data: result,
+          }).catch(() => {
+            // Ignore tabs where Gmail content script is not reachable.
+          });
+        }
+
+        sendResponse({ success: true, data: result });
+      } catch (error) {
+        console.error('[PhishNet] Failed to scan email:', error);
+
+        if (sender.tab?.id != null) {
+          clearBadge(sender.tab.id);
+        }
+
+        sendResponse({ success: false, error: error.message });
       }
     })();
     return true;
@@ -156,6 +192,48 @@ async function checkUrl(url) {
   return normalizeResult(url, result);
 }
 
+async function scanEmailContent(email) {
+  const subject = typeof email?.subject === 'string' ? email.subject.trim() : '';
+  const body = typeof email?.body === 'string' ? email.body.trim() : '';
+  const emailText = [subject, body].filter(Boolean).join('\n');
+
+  if (!emailText) {
+    throw new Error('No email content available for scanning');
+  }
+
+  const stored = await chrome.storage.local.get(['phishnet_api_key']);
+  const apiKey = stored.phishnet_api_key || '';
+  const headers = { 'Content-Type': 'application/json' };
+  if (apiKey) {
+    headers['X-API-Key'] = apiKey;
+  }
+
+  const response = await fetch(`${API_BASE}/emails/scan`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ email_text: emailText }),
+  });
+
+  if (!response.ok) {
+    let message = `API returned ${response.status}`;
+    try {
+      const errorData = await response.json();
+      if (typeof errorData?.detail === 'string') {
+        message = errorData.detail;
+      } else if (typeof errorData?.message === 'string') {
+        message = errorData.message;
+      }
+    } catch {
+      // Ignore JSON parse failures from backend error responses.
+    }
+
+    throw new Error(message);
+  }
+
+  const payload = await response.json();
+  return normalizeEmailResult(payload);
+}
+
 function detectSuspiciousUrlPatterns(url) {
   if (!url) return false;
 
@@ -230,6 +308,24 @@ function normalizeResult(url, payload) {
   };
 }
 
+function normalizeEmailResult(payload) {
+  const verdict = payload?.verdict || 'unknown';
+  const confidence =
+    typeof payload?.confidence === 'number'
+      ? payload.confidence
+      : typeof payload?.confidence_score === 'number'
+        ? payload.confidence_score
+        : inferConfidenceFromVerdict(verdict);
+  const riskLevel = payload?.risk_level || inferRiskLevel(verdict, confidence);
+
+  return {
+    verdict,
+    confidence,
+    risk_level: riskLevel,
+    reasons: Array.isArray(payload?.reasons) ? payload.reasons : [],
+  };
+}
+
 function cacheResult(url, result) {
   resultCache.set(url, { result, timestamp: Date.now() });
 
@@ -274,6 +370,32 @@ function updateBadge(tabId, result) {
   if (result.verdict === 'suspicious') {
     chrome.action.setBadgeText({ text: '?', tabId });
     chrome.action.setBadgeBackgroundColor({ color: '#f59e0b', tabId });
+    return;
+  }
+
+  clearBadge(tabId);
+}
+
+function updateEmailBadge(tabId, result) {
+  if (tabId == null || !result?.verdict) {
+    return;
+  }
+
+  if (result.verdict === 'phishing') {
+    chrome.action.setBadgeText({ text: '\u26A0', tabId });
+    chrome.action.setBadgeBackgroundColor({ color: '#dc2626', tabId });
+    return;
+  }
+
+  if (result.verdict === 'suspicious') {
+    chrome.action.setBadgeText({ text: '!', tabId });
+    chrome.action.setBadgeBackgroundColor({ color: '#f59e0b', tabId });
+    return;
+  }
+
+  if (result.verdict === 'safe') {
+    chrome.action.setBadgeText({ text: '\u2714', tabId });
+    chrome.action.setBadgeBackgroundColor({ color: '#16a34a', tabId });
     return;
   }
 

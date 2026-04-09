@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PhishNet</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="popup-container">
+    <!-- Header -->
+    <div class="popup-header">
+      <div class="popup-logo">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+        </svg>
+        <span>PhishNet</span>
+      </div>
+      <span class="popup-version">v1.0</span>
+    </div>
+
+    <!-- Settings row -->
+    <div class="popup-settings">
+      <label class="setting-label">
+        API Key
+        <input type="password" id="apiKeyInput" placeholder="phishnet_..." class="setting-input" />
+      </label>
+      <button id="saveSettings" class="btn btn-sm">Save</button>
+    </div>
+
+    <!-- Current URL check -->
+    <div class="popup-section">
+      <div class="section-title">Current Page</div>
+      <div id="currentUrl" class="url-display">Loading...</div>
+      <button id="checkBtn" class="btn btn-primary btn-full">Check This Page</button>
+    </div>
+
+    <!-- Result display -->
+    <div id="resultSection" class="popup-section result-section hidden">
+      <div id="resultVerdict" class="result-verdict"></div>
+      <div class="result-details">
+        <div class="result-row">
+          <span class="result-label">Confidence</span>
+          <span id="resultConfidence" class="result-value">--</span>
+        </div>
+        <div class="result-row">
+          <span class="result-label">Risk Level</span>
+          <span id="resultRisk" class="result-value">--</span>
+        </div>
+        <div class="result-row">
+          <span class="result-label">Verdict</span>
+          <span id="resultLabel" class="result-value">--</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Loading -->
+    <div id="loadingSection" class="popup-section hidden">
+      <div class="loading-spinner"></div>
+      <p class="loading-text">Analyzing URL...</p>
+    </div>
+
+    <!-- Error -->
+    <div id="errorSection" class="popup-section hidden">
+      <p id="errorMessage" class="error-text"></p>
+    </div>
+
+    <!-- Scan history -->
+    <div class="popup-section">
+      <div class="section-title">Recent Checks</div>
+      <ul id="historyList" class="history-list">
+        <li class="history-empty">No recent checks</li>
+      </ul>
+    </div>
+
+    <!-- Footer -->
+    <div class="popup-footer">
+      <a href="http://localhost:3000" target="_blank" class="footer-link">Open Dashboard</a>
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

@@ -7,7 +7,7 @@ Phishing is one of the most widespread cyber threats in India, with thousands of
 
 Students and senior citizens are especially vulnerable to phishing attacks. Cybercriminals often create realistic-looking emails and fake URLs to trick users into revealing sensitive information.
 
-This project aims to:
+The aim of the project is:
 
 Detect phishing URLs
 Analyze suspicious email content and headers

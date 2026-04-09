@@ -1,12 +1,10 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
-import { ScanSearch, ShieldAlert, FileBarChart, X } from 'lucide-react';
+import { ScanSearch, X } from 'lucide-react';
 import clsx from 'clsx';
 
 const NAV_ITEMS = [
   { to: '/scan', label: 'Scan', icon: ScanSearch },
-  { to: '/threats', label: 'Threats', icon: ShieldAlert },
-  { to: '/reports', label: 'Reports', icon: FileBarChart },
 ];
 
 export default function Sidebar({ open, onClose }) {

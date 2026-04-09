@@ -4,8 +4,6 @@ import { useAuthStore } from './stores/authStore';
 import MainLayout from './components/Layout/MainLayout';
 import ErrorBoundary from './components/Common/ErrorBoundary';
 import ScanPage from './pages/ScanPage';
-import ThreatsPage from './pages/ThreatsPage';
-import ReportsPage from './pages/ReportsPage';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 
@@ -39,8 +37,8 @@ export default function App() {
         >
           <Route index element={<Navigate to="/scan" replace />} />
           <Route path="scan" element={<ScanPage />} />
-          <Route path="threats" element={<ThreatsPage />} />
-          <Route path="reports" element={<ReportsPage />} />
+          <Route path="threats" element={<Navigate to="/scan" replace />} />
+          <Route path="reports" element={<Navigate to="/scan" replace />} />
         </Route>
 
         {/* Catch-all */}

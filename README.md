@@ -1,4 +1,3 @@
-🛡️ Phishing URL & Email Detection Extension
 📌 Overview
 
 Phishing is one of the most widespread cyber threats in India, with thousands of malicious websites and emails targeting users every month.
@@ -7,13 +6,7 @@ This project builds a real-time phishing detection system that combines Machine 
 
 🚨 Problem Statement
 
-<<<<<<< HEAD
 Students and senior citizens are especially vulnerable to phishing attacks. Cybercriminals create highly realistic emails and fake URLs to trick users into revealing sensitive information.
-=======
-Students and senior citizens are especially vulnerable to phishing attacks. Cybercriminals often create realistic-looking emails and fake URLs to trick users into revealing sensitive information.
-
-The aim of the project is:
->>>>>>> d66b43c82202060b5d61e7011fa69acc387b54d9
 
 The aim of this project is to:
 Detect phishing URLs
@@ -41,6 +34,7 @@ Classifies links/emails as:
 ✅ Safe
 ⚠️ Suspicious
 ❌ Phishing
+
 🏗️ System Architecture
 
 This project is built as a full-stack AI-powered system:
@@ -79,6 +73,7 @@ alarms
 ⚙️ Dev & Infrastructure
 Docker & Docker Compose setup
 Redis & Celery support (for future async tasks & scaling)
+
 🚀 Detection System (Core Innovation)
 
 Our extension uses 3-layer phishing detection:
@@ -101,19 +96,14 @@ Misleading anchor text
 Phishing keywords
 Highlights risky links visually for the user
 ⚙️ How It Works
-User opens a website or email
-Extension extracts:
-URL
-Email content & headers
-Data is sent to backend API
-ML model processes the input
-Prediction is returned:
+1.User opens a website or email
+2.Extension extracts:
+    URL
+    Email content & headers
+3.Data is sent to backend API
+4.ML model processes the input
+5.Prediction is returned:
 ✅ Safe
 ⚠️ Suspicious
 ❌ Phishing
-User receives a real-time warning via UI and browser badge
-💡 Impact
-Helps prevent financial fraud and data theft
-Protects non-technical users from cyber threats
-Raises awareness about phishing attacks
-Provides real-time, proactive security
+6.User receives a real-time warning via UI and browser badge

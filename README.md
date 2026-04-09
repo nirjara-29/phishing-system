@@ -7,7 +7,13 @@ This project builds a real-time phishing detection system that combines Machine 
 
 🚨 Problem Statement
 
+<<<<<<< HEAD
 Students and senior citizens are especially vulnerable to phishing attacks. Cybercriminals create highly realistic emails and fake URLs to trick users into revealing sensitive information.
+=======
+Students and senior citizens are especially vulnerable to phishing attacks. Cybercriminals often create realistic-looking emails and fake URLs to trick users into revealing sensitive information.
+
+The aim of the project is:
+>>>>>>> d66b43c82202060b5d61e7011fa69acc387b54d9
 
 The aim of this project is to:
 Detect phishing URLs

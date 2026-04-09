@@ -1,0 +1,33 @@
+{
+  "manifest_version": 3,
+  "name": "PhishNet - Phishing Detector",
+  "version": "1.0.0",
+  "description": "Real-time phishing detection powered by AI. Checks URLs before you visit them and highlights suspicious links on any page.",
+  "permissions": [
+    "activeTab",
+    "tabs",
+    "storage",
+    "alarms"
+  ],
+  "host_permissions": [
+    "http://localhost:8000/*",
+    "http://127.0.0.1:8000/*",
+    "https://api.phishnet.io/*"
+  ],
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "background": {
+    "service_worker": "background-worker.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "css": ["styles.css"],
+      "run_at": "document_idle"
+    }
+  ],
+  "options_page": "popup.html"
+}
